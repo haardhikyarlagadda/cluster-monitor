@@ -22,7 +22,8 @@ const IDLE_ORBIT_MS = 4000;
 
 // ─── state ───────────────────────────────────────────────────────────────────
 let snapshot = null;
-let config   = { amber: 60, red: 90, refresh: 15, demo: false };
+let config   = { amber: 60, red: 90, refresh: 15, demo: false,
+                 lat_amber_ms: 250, lat_red_ms: 600, err_amber_pct: 0.5, err_red_pct: 2 };
 let searchTerm = "";
 let alertsOnly = false;
 let autoOrbit  = true;
@@ -50,6 +51,15 @@ let mouse = { x: 0, y: 0, inside: false };
 let layout = [];   // per-cluster plane geometry, rebuilt when data/filters change
 let drawn  = [];   // spheres drawn this frame, in paint order (for picking)
 let stars  = [];
+
+// mesh traffic (Kuma): arcs between deployments and to external endpoints
+const TRAFFIC_MODES = ["focus", "problems", "all", "off"];
+const TCP_RGB = [118, 138, 170];
+const EXT_ICON = { ingress: "IN", database: "DB", queue: "MQ", storage: "S3", api: "API" };
+let trafficMode = TRAFFIC_MODES.includes(localStorage.getItem("trafficMode"))
+  ? localStorage.getItem("trafficMode") : "focus";
+let trafficIdx = new Map();   // node key -> edges touching it (externals scoped "cluster|ext:name")
+let nodePos = {};             // node key -> world position this frame (sphere centre + radius)
 
 const bgCanvas = document.getElementById("canvas-bg");
 const fgCanvas = document.getElementById("canvas-fg");
@@ -143,6 +153,27 @@ function buildLayout() {
   const minY = Math.min(...planes.map(p => p.by)),        maxY = Math.max(...planes.map(p => p.by));
   const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2, cy = (minY + maxY) / 2;
   planes.forEach(p => { p.bx -= cx; p.bz -= cz; p.by -= cy; });
+
+  // traffic: scope external ids per cluster, index edges by node, and park the
+  // external endpoints just outside the plane (ingress left, the rest right)
+  trafficIdx = new Map();
+  planes.forEach(p => {
+    const scope = id => id.startsWith("ext:") ? `${p.cl.name}|${id}` : id;
+    p.edges = (p.cl.edges || []).map(e => ({ ...e, source: scope(e.source), target: scope(e.target) }));
+    for (const e of p.edges) for (const k of [e.source, e.target]) {
+      if (!trafficIdx.has(k)) trafficIdx.set(k, []);
+      trafficIdx.get(k).push(e);
+    }
+    const ext = p.cl.externals || [];
+    const sinks = ext.filter(e => e.kind !== "ingress");
+    p.ext = ext.map(e => {
+      const key = scope(e.id);
+      if (e.kind === "ingress") return { ...e, key, x: p.bx - p.hw - 1.8, y: p.by - 0.5, z: p.bz };
+      const i = sinks.indexOf(e), n = sinks.length;
+      return { ...e, key, x: p.bx + p.hw + 1.8, y: p.by - 0.5,
+               z: p.bz + (n > 1 ? (i / (n - 1) - 0.5) * p.hd * 1.5 : 0) };
+    });
+  });
   layout = planes;
   layout.radius = Math.hypot(maxX - minX, maxZ - minZ) / 2 || 10;
 }
@@ -256,6 +287,17 @@ function drawSphere(ctx, item, now) {
     ctx.lineWidth = 1.2;
     ctx.strokeStyle = `rgba(200,120,70,${0.35 * pulse})`;
     ctx.beginPath(); ctx.arc(sp.sx, sp.sy, r * 1.75, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // dotted ring: inbound mesh traffic is slow or failing
+  const ts = dep.traffic && dep.traffic.status;
+  if (trafficMode !== "off" && (ts === "amber" || ts === "red")) {
+    ctx.save();
+    ctx.setLineDash([2, 3]);
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = rgba(STATUS_RGB[ts], 0.8);
+    ctx.beginPath(); ctx.arc(sp.sx, sp.sy, r * 1.95, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
 
   // soft halo ring
@@ -482,6 +524,150 @@ function drawLaunchedPods(ctx, it, prog, now) {
   }
 }
 
+// ─── mesh traffic: external endpoints + arcs ─────────────────────────────────
+function trafficRGB(status) { return status === "green" || status === "amber" || status === "red" ? STATUS_RGB[status] : TCP_RGB; }
+function fmtRps(v) { return v == null ? "—" : v >= 100 ? Math.round(v).toString() : v >= 10 ? v.toFixed(0) : v.toFixed(1); }
+function fmtMs(v)  { return v == null ? "—" : v >= 1000 ? (v / 1000).toFixed(2) + " s" : Math.round(v) + " ms"; }
+function fmtKbps(v) { return v == null ? "—" : v >= 1024 ? (v / 1024).toFixed(1) + " MB/s" : Math.round(v) + " kB/s"; }
+function latRGB(ms) {
+  if (ms == null) return null;
+  return ms > (config.lat_red_ms ?? 600) ? STATUS_RGB.red : ms > (config.lat_amber_ms ?? 250) ? STATUS_RGB.amber : STATUS_RGB.green;
+}
+function errRGB(pct) {
+  if (pct == null) return null;
+  return pct >= (config.err_red_pct ?? 2) ? STATUS_RGB.red : pct >= (config.err_amber_pct ?? 0.5) ? STATUS_RGB.amber : STATUS_RGB.green;
+}
+
+function drawExternals(ctx, p) {
+  for (const x of p.ext || []) {
+    nodePos[x.key] = { x: x.x, y: x.y, z: x.z, r: 0.35 };
+    const sp = project(x.x, x.y, x.z);
+    if (sp.depth < -cam.dist + 1) continue;
+    const s = Math.max(6, 0.55 * sp.scale);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(sp.sx, sp.sy - s); ctx.lineTo(sp.sx + s, sp.sy); ctx.lineTo(sp.sx, sp.sy + s); ctx.lineTo(sp.sx - s, sp.sy);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(16,26,40,0.92)";
+    ctx.fill();
+    ctx.lineWidth = 1.3;
+    ctx.strokeStyle = `hsla(${p.hue}, 35%, 66%, 0.85)`;
+    ctx.stroke();
+    ctx.font = `bold ${Math.max(7, Math.min(s * 0.62, 12))}px ${FONT}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = `hsl(${p.hue}, 35%, 74%)`;
+    ctx.fillText(EXT_ICON[x.kind] || "EXT", sp.sx, sp.sy + 0.5);
+    ctx.font = `bold ${10 * uiScale}px ${FONT}`;
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = 3;
+    ctx.fillStyle = `hsla(${p.hue}, 25%, 72%, 0.8)`;
+    ctx.fillText(x.name, sp.sx, sp.sy + s + 3);
+    ctx.restore();
+  }
+}
+
+// which edges to draw: the selected / hovered deployment's own traffic always;
+// "problems" adds every slow or failing edge, "all" adds everything (faint)
+function edgesToDraw() {
+  const sel = selectedKey ? selectedKey.split("#")[0] : null;
+  const hov = hoveredKey && !hoveredKey.includes("#") ? hoveredKey : null;
+  const picked = new Map();
+  if (trafficMode === "problems" || trafficMode === "all") {
+    for (const p of layout) for (const e of p.edges || []) {
+      if (trafficMode === "all" || e.status === "amber" || e.status === "red") picked.set(e, "bg");
+    }
+  }
+  for (const [k, kind] of [[hov, "hover"], [sel, "focus"]]) {
+    if (k) for (const e of trafficIdx.get(k) || []) picked.set(e, kind);
+  }
+  const rank = { bg: 0, hover: 1, focus: 2 };
+  return [...picked].map(([e, kind]) => ({ e, kind })).sort((a, b) => rank[a.kind] - rank[b.kind]);
+}
+
+// quadratic arc in world space, lifted above the planes (negative y is up)
+function arcPoint(a, b, h, t) {
+  const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, my = Math.min(a.y, b.y) - h, u = 1 - t;
+  return { x: u * u * a.x + 2 * u * t * mx + t * t * b.x,
+           y: u * u * a.y + 2 * u * t * my + t * t * b.y,
+           z: u * u * a.z + 2 * u * t * mz + t * t * b.z };
+}
+
+function drawEdge(ctx, { e, kind }, now, withLabel) {
+  const a0 = nodePos[e.source], b0 = nodePos[e.target];
+  if (!a0 || !b0) return;
+  const a = { x: a0.x, y: a0.y - a0.r, z: a0.z }, b = { x: b0.x, y: b0.y - b0.r, z: b0.z };
+  const h = 0.8 + Math.hypot(b.x - a.x, b.z - a.z) * 0.22;
+  const at = t => { const w = arcPoint(a, b, h, t); return project(w.x, w.y, w.z); };
+  const tcp = e.protocol === "tcp";
+  const rgb = tcp ? TCP_RGB : trafficRGB(e.status);
+  const hot = e.status === "red" || e.status === "amber";
+  const alpha = kind === "focus" ? 0.9 : kind === "hover" ? 0.6 : tcp ? 0.12 : e.status === "red" ? 0.7 : e.status === "amber" ? 0.5 : 0.15;
+  const width = Math.min(4.5, 0.8 + Math.log10(e.rps + 1) * 1.2) * (kind === "focus" ? 1.15 : kind === "bg" ? 0.8 : 1);
+
+  const pts = [];
+  for (let i = 0; i <= 24; i++) pts.push(at(i / 24));
+  ctx.save();
+  if (tcp) ctx.setLineDash([4, 4]);
+  if (kind === "focus" && hot) { ctx.shadowColor = rgba(rgb, 0.6); ctx.shadowBlur = 6; }
+  ctx.strokeStyle = rgba(rgb, alpha);
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  pts.forEach((q, i) => i ? ctx.lineTo(q.sx, q.sy) : ctx.moveTo(q.sx, q.sy));
+  ctx.stroke();
+  ctx.restore();
+
+  // arrowhead near the target shows direction
+  const q1 = at(0.86), q2 = at(0.95);
+  const ang = Math.atan2(q2.sy - q1.sy, q2.sx - q1.sx), s = 4 + width * 1.2;
+  ctx.fillStyle = rgba(rgb, Math.min(1, alpha + 0.1));
+  ctx.beginPath();
+  ctx.moveTo(q2.sx, q2.sy);
+  ctx.lineTo(q2.sx - s * Math.cos(ang - 0.45), q2.sy - s * Math.sin(ang - 0.45));
+  ctx.lineTo(q2.sx - s * Math.cos(ang + 0.45), q2.sy - s * Math.sin(ang + 0.45));
+  ctx.closePath();
+  ctx.fill();
+
+  // moving dots: more and faster on busier edges
+  if (kind !== "bg" || hot) {
+    const n = Math.max(1, Math.min(5, Math.round(Math.log2(e.rps + 1) / 2)));
+    const dur = 2800 - Math.min(1800, e.rps * 4);
+    ctx.fillStyle = rgba(mix(rgb, [255, 255, 255], 0.55), Math.min(1, alpha + 0.15));
+    for (let k = 0; k < n; k++) {
+      const q = at(((now / dur) + k / n) % 1);
+      ctx.beginPath(); ctx.arc(q.sx, q.sy, kind === "bg" ? 1.6 : 2.3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  if (withLabel) {
+    const m = at(0.5);
+    const text = tcp ? `TCP ${fmtKbps(e.kbps)}`
+      : `${fmtRps(e.rps)} rps · p95 ${fmtMs(e.p95_ms)}` + (e.error_pct >= (config.err_amber_pct ?? 0.5) ? ` · ${e.error_pct.toFixed(1)}% 5xx` : "");
+    ctx.save();
+    ctx.font = `bold ${10 * uiScale}px ${FONT}`;
+    if (!labelFits(m.sx, m.sy - 4, ctx.measureText(text).width, 12 * uiScale)) { ctx.restore(); return; }
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 4;
+    ctx.fillStyle = rgba(mix(rgb, [255, 255, 255], 0.35), 0.95);
+    ctx.fillText(text, m.sx, m.sy - 4);
+    ctx.restore();
+  }
+}
+
+function drawTraffic(ctx, now) {
+  const items = edgesToDraw();
+  // label only the busiest edges of the focused deployment, to keep it readable
+  const labelled = new Set(items.filter(i => i.kind === "focus").sort((a, b) => b.e.rps - a.e.rps).slice(0, 8).map(i => i.e));
+  labelBoxes = [];
+  for (const it of items) drawEdge(ctx, it, now, labelled.has(it.e));
+}
+let labelBoxes = [];   // screen rects of arc labels placed this frame
+function labelFits(x, y, w, h) {
+  const box = { x: x - w / 2 - 3, y: y - h - 2, w: w + 6, h: h + 4 };
+  if (labelBoxes.some(b => box.x < b.x + b.w && b.x < box.x + box.w && box.y < b.y + b.h && b.y < box.y + box.h)) return false;
+  labelBoxes.push(box);
+  return true;
+}
+
 // ─── plane label: "│cluster-name / N DEPLOYMENTS · g/a/r/u" ─────────────────
 function drawLabel(ctx, p) {
   const a = project(p.bx - p.hw * 0.55, p.by - 0.05, p.bz + p.hd * 0.55);
@@ -516,6 +702,7 @@ function render(now) {
   fgCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   fgCtx.clearRect(0, 0, W, H);
   drawn = [];
+  nodePos = {};
   const overlay = [];
   if (podAnim.open) lastInteract = Date.now();   // hold auto-orbit while pods are launched
   stepCamTween(now);
@@ -537,6 +724,7 @@ function render(now) {
                  wx: w.x, wy: p.by - rw - 0.05 + bob, wz: w.z, rw, plane: p };
       }).sort((a, b) => b.sp.depth - a.sp.depth);
       for (const it of items) {
+        nodePos[it.key] = { x: it.wx, y: it.wy, z: it.wz, r: it.rw };
         if (it.r < 0.8) continue;
         drawSphere(fgCtx, it, now);
         drawn.push(it);
@@ -547,6 +735,10 @@ function render(now) {
           else drawPodRing(fgCtx, it, now);
         }
       }
+    }
+    if (trafficMode !== "off") {
+      for (const { p } of order) drawExternals(fgCtx, p);
+      drawTraffic(fgCtx, now);
     }
     for (const { p } of order) drawLabel(fgCtx, p);
     for (const { it, prog } of overlay) drawLaunchedPods(fgCtx, it, prog, now);
@@ -613,7 +805,8 @@ function updateTooltip() {
       `<div class="tt-name">${esc(d.namespace)} / ${esc(d.name)}</div>` +
       `<div class="tt-cluster">${esc(d.cluster)}</div>` +
       `<div class="tt-meta">AVG CPU <span style="color:${col}">${cpu}</span> · ${d.ready}/${d.desired} READY` +
-      (d.status === "red" && (d.pods || []).length ? ` · <span style="color:${col}">click to launch pods</span>` : "") + `</div>`;
+      (d.status === "red" && (d.pods || []).length ? ` · <span style="color:${col}">click to launch pods</span>` : "") + `</div>` +
+      trafficTooltip(d.traffic);
   }
   tooltip.classList.remove("hidden");
   const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
@@ -622,6 +815,14 @@ function updateTooltip() {
   if (y + th > H - 8) y = mouse.y - th - 12;
   tooltip.style.left = x + "px";
   tooltip.style.top  = y + "px";
+}
+
+function trafficTooltip(t) {
+  if (!t || trafficMode === "off" || !(t.in_rps || t.out_rps)) return "";
+  if (t.p95_ms == null) return `<div class="tt-meta">MESH OUT ${fmtRps(t.out_rps)} rps</div>`;
+  const lc = rgba(latRGB(t.p95_ms), 1), ec = rgba(errRGB(t.error_pct) || STATUS_RGB.green, 1);
+  return `<div class="tt-meta">MESH IN ${fmtRps(t.in_rps)} rps · p95 <span style="color:${lc}">${fmtMs(t.p95_ms)}</span>` +
+         ` · <span style="color:${ec}">${t.error_pct.toFixed(2)}% 5xx</span></div>`;
 }
 
 function esc(s) {
@@ -671,6 +872,10 @@ window.addEventListener("mouseup", e => {
     } else if (hit.dep.status === "red" && (hit.dep.pods || []).length) {
       if (podAnim.open && podAnim.key === hit.key) collapsePods();
       else launchPods(hit.key, podFocus[hit.key]);
+    } else if (trafficMode !== "off" && (trafficIdx.get(hit.key) || []).length) {
+      collapsePods();
+      const pos = nodePos[hit.key];   // bring its callers and callees into view
+      if (pos) flyTo(pos.x, pos.y - 2, pos.z, Math.min(cam.dist, Math.max(26, layout.radius * 1.0)));
     }
   }
 });
@@ -718,12 +923,76 @@ function showDetail() {
       <div class="detail-label">PODS W/ METRICS</div>
       <div class="detail-val">${withMetrics} / ${pods.length}</div>
     </div>
+    ${trafficSection(dep)}
+    <div class="detail-label section-label">PODS (${pods.length})</div>
     <table class="detail-table">
       <thead><tr><th>POD</th><th>PHASE</th><th class="num">USE m</th><th class="num">REQ m</th><th>CPU</th><th>MEM</th><th class="num">RESTARTS</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   panel.classList.remove("hidden");
 }
+
+// ─── detail card: mesh traffic ───────────────────────────────────────────────
+function trafficSection(dep) {
+  const t = dep.traffic, key = depKey(dep);
+  const edges = trafficIdx.get(key) || [];
+  if (!t || !edges.length) return "";
+  const byRate = (a, b) => (b.protocol === "tcp" ? b.kbps / 50 : b.rps) - (a.protocol === "tcp" ? a.kbps / 50 : a.rps);
+  const inbound = edges.filter(e => e.target === key).sort(byRate);
+  const outbound = edges.filter(e => e.source === key).sort(byRate);
+  const lc = t.p95_ms != null ? rgba(latRGB(t.p95_ms), 1) : "inherit";
+  const ec = errRGB(t.error_pct);
+  const lat = t.p95_ms != null
+    ? `${fmtMs(t.p50_ms)} / <span style="color:${lc}">${fmtMs(t.p95_ms)}</span> / ${fmtMs(t.p99_ms)}`
+    : `<span class="detail-note">no inbound requests</span>`;
+  return `<div class="detail-label section-label">MESH TRAFFIC</div>
+    <div class="detail-grid traffic-grid">
+      <div class="detail-label">INBOUND</div><div class="detail-val">${fmtRps(t.in_rps)} req/s</div>
+      <div class="detail-label">P50 / P95 / P99</div><div class="detail-val">${lat}</div>
+      <div class="detail-label">5xx ERRORS</div>
+      <div class="detail-val" style="color:${ec ? rgba(ec, 1) : "inherit"}">${t.error_pct != null ? t.error_pct.toFixed(2) + "%" : "—"}</div>
+      <div class="detail-label">OUTBOUND</div><div class="detail-val">${fmtRps(t.out_rps)} req/s</div>
+    </div>
+    ${peerTable("CALLED BY", "CALLER", inbound, "source")}
+    ${peerTable("CALLS", "DESTINATION", outbound, "target")}`;
+}
+
+function peerTable(title, col, edges, end) {
+  if (!edges.length) return "";
+  const rows = edges.slice(0, 12).map(e => {
+    const peer = e[end], ext = peer.includes("|ext:");
+    const name = ext ? `${peer.split("|ext:")[1]} (external)` : peer.split("/").slice(1).join(" / ");
+    const tcp = e.protocol === "tcp";
+    const lc = tcp ? rgba(TCP_RGB, 1) : rgba(latRGB(e.p95_ms), 1);
+    const ec = errRGB(e.error_pct);
+    return `<tr class="${ext ? "" : "peer-row"}" data-key="${esc(peer)}">
+      <td class="pod" title="${esc(name)}">${esc(name)}</td>
+      <td>${esc(e.protocol.toUpperCase())}</td>
+      <td class="num">${tcp ? fmtKbps(e.kbps) : fmtRps(e.rps) + " rps"}</td>
+      <td class="num" style="color:${lc}">${tcp ? "—" : fmtMs(e.p95_ms)}</td>
+      <td class="num" style="color:${ec ? rgba(ec, 1) : "inherit"}">${e.error_pct != null ? e.error_pct.toFixed(2) + "%" : "—"}</td>
+    </tr>`;
+  }).join("");
+  const more = edges.length > 12 ? ` · top 12 of ${edges.length}` : "";
+  return `<div class="detail-label section-label">${title} (${edges.length}${more})</div>
+    <table class="detail-table traffic-table">
+      <thead><tr><th>${col}</th><th>PROTO</th><th class="num">RATE</th><th class="num">P95</th><th class="num">5xx</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// clicking a caller / destination row jumps to that deployment
+document.getElementById("detail-content").addEventListener("click", e => {
+  const row = e.target.closest(".peer-row");
+  if (!row) return;
+  const key = row.dataset.key;
+  if (!findDep(key)) return;
+  collapsePods();
+  selectedKey = key;
+  showDetail();
+  const pos = nodePos[key];
+  if (pos) flyTo(pos.x, pos.y, pos.z, cam.dist);
+});
 
 function meterCell(pct) {
   const c = rgba(STATUS_RGB[statusOf(pct)], 1);
@@ -918,6 +1187,8 @@ async function fetchConfig() {
     document.getElementById("leg-amber2").textContent = config.amber;
     document.getElementById("leg-red").textContent    = config.red;
     document.getElementById("leg-red2").textContent   = config.red;
+    document.getElementById("leg-lat-amber").textContent = config.lat_amber_ms ?? 250;
+    document.getElementById("leg-lat-red").textContent   = config.lat_red_ms ?? 600;
   } catch (e) {}
 }
 
@@ -926,6 +1197,22 @@ document.getElementById("chk-alerts").addEventListener("change", e => {
   alertsOnly = e.target.checked;
   buildLayout();
 });
+
+function setTrafficMode(mode) {
+  trafficMode = mode;
+  saveLS("trafficMode", mode);
+  document.getElementById("traffic-mode").textContent = mode.toUpperCase();
+  document.getElementById("btn-traffic").classList.toggle("on", mode !== "off");
+  document.getElementById("leg-traffic").classList.toggle("hidden", mode === "off");
+  if (!document.getElementById("detail").classList.contains("hidden")) showDetail();
+}
+const nextTrafficMode = () => setTrafficMode(TRAFFIC_MODES[(TRAFFIC_MODES.indexOf(trafficMode) + 1) % TRAFFIC_MODES.length]);
+document.getElementById("btn-traffic").addEventListener("click", nextTrafficMode);
+window.addEventListener("keydown", e => {
+  if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.metaKey && !e.altKey
+      && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) nextTrafficMode();
+});
+setTrafficMode(trafficMode);
 
 document.getElementById("chk-orbit").addEventListener("change", e => {
   autoOrbit = e.target.checked;

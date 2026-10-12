@@ -15,6 +15,7 @@
       <input id="search" type="text" placeholder="search name / namespace" autocomplete="off">
       <button id="btn-ns" class="ctl-btn ns-btn"><span id="ns-badge">ALL</span> &#9660;</button>
       <label class="ctl-check"><input id="chk-alerts" type="checkbox"> ALERTS ONLY</label>
+      <button id="btn-traffic" class="ctl-btn" title="Mesh traffic arcs: focus / problems / all / off (T)">TRAFFIC: <span id="traffic-mode">FOCUS</span></button>
       <label class="ctl-check"><input id="chk-orbit" type="checkbox" checked> AUTO-ORBIT</label>
       <button id="btn-refresh" class="ctl-btn sq" title="Force refresh">&#8635;</button>
       <button id="btn-home" class="ctl-btn sq" title="Reset camera">&#8962;</button>
@@ -39,6 +40,7 @@
       <span class="leg"><i class="dot amber"></i><span id="leg-amber2">60</span> &ndash; <span id="leg-red">90</span> %</span>
       <span class="leg"><i class="dot red"></i>&gt; <span id="leg-red2">90</span> %</span>
       <span class="leg"><i class="dot unknown"></i>NO METRICS</span>
+      <span class="leg" id="leg-traffic"><i class="arc-sample"></i>ARC p95 &le; <span id="leg-lat-amber">250</span> / <span id="leg-lat-red">600</span> ms &middot; <i class="arc-sample tcp"></i>TCP</span>
     </div>
 
     <!-- DETAIL (floating, top-right) -->
@@ -55,7 +57,7 @@
 
   <!-- FOOTER -->
   <footer id="footer">
-    <span id="footer-hint">drag &middot; orbit &nbsp;&nbsp; wheel &middot; zoom &nbsp;&nbsp; shift+drag &middot; pan &nbsp;&nbsp; click sphere &middot; inspect</span>
+    <span id="footer-hint">drag &middot; orbit &nbsp;&nbsp; wheel &middot; zoom &nbsp;&nbsp; shift+drag &middot; pan &nbsp;&nbsp; click sphere &middot; inspect &nbsp;&nbsp; T &middot; traffic</span>
     <span id="footer-totals"></span>
     <span id="footer-mode"></span>
     <span id="footer-updated"></span>

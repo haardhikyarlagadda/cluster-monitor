@@ -90,6 +90,15 @@ def create_app(settings: Settings, collector) -> FastAPI:
     app = FastAPI(title="Cluster Monitor")
     store = SnapshotStore(collector, settings.refresh)
 
+    @app.middleware("http")
+    async def revalidate_ui(request, call_next):
+        # browsers must re-check the page and its JS/CSS (cheap 304s), so a new
+        # version of the UI shows up on the next load instead of a stale cache
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.get("/api/snapshot")
     def get_snapshot():
         return store.payload()
@@ -100,6 +109,10 @@ def create_app(settings: Settings, collector) -> FastAPI:
             "demo": settings.demo,
             "amber": settings.amber,
             "red": settings.red,
+            "lat_amber_ms": settings.lat_amber_ms,
+            "lat_red_ms": settings.lat_red_ms,
+            "err_amber_pct": settings.err_amber_pct,
+            "err_red_pct": settings.err_red_pct,
             "refresh": settings.refresh,
             "clusters": settings.clusters,
         }

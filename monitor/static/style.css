@@ -330,3 +330,13 @@ body::after {
 .container-table .detail-note { font-size: .82em; }
 .detail-table tr.pod-row { cursor: pointer; }
 .detail-table tr.pod-row:hover td { background: rgba(95,180,196,.08); }
+
+/* mesh traffic */
+#btn-traffic.on { border-color: var(--c-cyan); color: var(--c-cyan); }
+.arc-sample { display: inline-block; width: 26px; height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--c-green), var(--c-amber), var(--c-red)); }
+.arc-sample.tcp { background: repeating-linear-gradient(90deg, #768aaa 0 4px, transparent 4px 7px); }
+#leg-traffic.hidden { display: none; }
+.traffic-grid { margin-top: 2px; }
+.traffic-table tr.peer-row { cursor: pointer; }
+.traffic-table tr.peer-row:hover td { background: rgba(95,180,196,.08); }

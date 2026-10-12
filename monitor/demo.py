@@ -4,6 +4,7 @@ import random
 from typing import List, Optional
 
 from .config import Settings
+from .demo_traffic import build_traffic
 from .model import Cluster, Container, Deployment, Pod, Snapshot, classify
 
 # Base deployment table: (namespace, name, replicas, requests_m, start_cpu, behaviour)
@@ -250,8 +251,11 @@ class DemoCollector:
                     pods=pods,
                 ))
 
-        return Cluster(name=cname, index=idx, deployments=deployments,
-                       metrics_available=True)
+        cluster = Cluster(name=cname, index=idx, deployments=deployments,
+                          metrics_available=True)
+        # own rng, so the deployment/pod sequence above is unchanged by traffic
+        build_traffic(cluster, s, random.Random(f"traffic#{idx}#{self._call_count}"))
+        return cluster
 
 
 def _make_pods(ident: str, desired: int, ready: int, requests_m: float,

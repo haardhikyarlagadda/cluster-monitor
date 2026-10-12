@@ -16,6 +16,10 @@ class Settings:
     refresh: int = 15
     amber: float = 60.0
     red: float = 90.0
+    lat_amber_ms: float = 250.0   # mesh traffic: p95 latency thresholds
+    lat_red_ms: float = 600.0
+    err_amber_pct: float = 0.5    # mesh traffic: 5xx share thresholds
+    err_red_pct: float = 2.0
     port: int = 8081
     web: bool = True
 
@@ -38,6 +42,14 @@ class Settings:
                        default=float(os.environ.get("AMBER_THRESHOLD", "60")))
         p.add_argument("--red",         type=float,
                        default=float(os.environ.get("RED_THRESHOLD", "90")))
+        p.add_argument("--lat-amber",   type=float,
+                       default=float(os.environ.get("LATENCY_AMBER_MS", "250")))
+        p.add_argument("--lat-red",     type=float,
+                       default=float(os.environ.get("LATENCY_RED_MS", "600")))
+        p.add_argument("--err-amber",   type=float,
+                       default=float(os.environ.get("ERROR_AMBER_PCT", "0.5")))
+        p.add_argument("--err-red",     type=float,
+                       default=float(os.environ.get("ERROR_RED_PCT", "2")))
         p.add_argument("--web",         action="store_true", default=True)
         p.add_argument("--port",        type=int,
                        default=int(os.environ.get("PORT", "8081")))
@@ -52,6 +64,10 @@ class Settings:
             refresh=args.refresh,
             amber=args.amber,
             red=args.red,
+            lat_amber_ms=args.lat_amber,
+            lat_red_ms=args.lat_red,
+            err_amber_pct=args.err_amber,
+            err_red_pct=args.err_red,
             port=args.port,
             web=args.web,
         )
