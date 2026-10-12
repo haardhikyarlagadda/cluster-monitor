@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLUSTER//MONITOR</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div id="brand">&#9679; CLUSTER//MONITOR <span id="sim-tag" class="hidden">SIM</span></div>
+    <div id="controls">
+      <input id="search" type="text" placeholder="search name / namespace" autocomplete="off">
+      <button id="btn-ns" class="ctl-btn ns-btn"><span id="ns-badge">ALL</span> &#9660;</button>
+      <label class="ctl-check"><input id="chk-alerts" type="checkbox"> ALERTS ONLY</label>
+      <label class="ctl-check"><input id="chk-orbit" type="checkbox" checked> AUTO-ORBIT</label>
+      <button id="btn-refresh" class="ctl-btn sq" title="Force refresh">&#8635;</button>
+      <button id="btn-home" class="ctl-btn sq" title="Reset camera">&#8962;</button>
+      <span class="btn-pair">
+        <button id="btn-scale-down" class="ctl-btn sq">A&minus;</button><button id="btn-scale-up" class="ctl-btn sq">A+</button>
+      </span>
+    </div>
+  </header>
+
+  <!-- MAIN STAGE -->
+  <div id="stage">
+    <div id="canvas-wrap">
+      <canvas id="canvas-bg"></canvas>
+      <canvas id="canvas-fg"></canvas>
+      <div id="tooltip" class="hidden"></div>
+      <div id="error-banner" class="hidden"></div>
+    </div>
+
+    <!-- LEGEND -->
+    <div id="legend">
+      <span class="leg"><i class="dot green"></i>&le; <span id="leg-amber">60</span> %</span>
+      <span class="leg"><i class="dot amber"></i><span id="leg-amber2">60</span> &ndash; <span id="leg-red">90</span> %</span>
+      <span class="leg"><i class="dot red"></i>&gt; <span id="leg-red2">90</span> %</span>
+      <span class="leg"><i class="dot unknown"></i>NO METRICS</span>
+    </div>
+
+    <!-- DETAIL (floating, top-right) -->
+    <aside id="detail" class="hidden">
+      <button id="detail-close" title="Close">&#10005;</button>
+      <div id="detail-content"></div>
+    </aside>
+  </div>
+
+  <!-- NAMESPACE PANEL -->
+  <div id="ns-panel" class="hidden">
+    <div id="ns-panel-inner"></div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer id="footer">
+    <span id="footer-hint">drag &middot; orbit &nbsp;&nbsp; wheel &middot; zoom &nbsp;&nbsp; shift+drag &middot; pan &nbsp;&nbsp; click sphere &middot; inspect</span>
+    <span id="footer-totals"></span>
+    <span id="footer-mode"></span>
+    <span id="footer-updated"></span>
+  </footer>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

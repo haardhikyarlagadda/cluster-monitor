@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLUSTER//MONITOR</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div id="brand">&#9679; CLUSTER//MONITOR <span id="sim-tag" class="hidden">SIM</span></div>
+    <div id="controls">
+      <input id="search" type="text" placeholder="search name / namespace" autocomplete="off">
+      <button id="btn-ns" class="ctl-btn">NAMESPACES <span id="ns-badge" class="badge">ALL</span></button>
+      <button id="btn-alerts" class="ctl-btn">ALERTS ONLY</button>
+      <button id="btn-orbit" class="ctl-btn">AUTO-ORBIT</button>
+      <button id="btn-refresh" class="ctl-btn" title="Force refresh">&#8635;</button>
+      <button id="btn-home" class="ctl-btn" title="Reset camera">&#8962;</button>
+      <button id="btn-scale-down" class="ctl-btn">A-</button>
+      <button id="btn-scale-up" class="ctl-btn">A+</button>
+    </div>
+  </header>
+
+  <!-- MAIN STAGE -->
+  <div id="stage">
+    <!-- LEFT ROSTER -->
+    <aside id="roster"></aside>
+
+    <!-- 3D CANVAS -->
+    <div id="canvas-wrap">
+      <canvas id="canvas-bg"></canvas>
+      <canvas id="canvas-fg"></canvas>
+      <div id="error-banner" class="hidden"></div>
+    </div>
+
+    <!-- RIGHT DETAIL -->
+    <aside id="detail" class="hidden">
+      <button id="detail-close">&#10005;</button>
+      <div id="detail-content"></div>
+    </aside>
+  </div>
+
+  <!-- NAMESPACE PANEL -->
+  <div id="ns-panel" class="hidden">
+    <div id="ns-panel-inner"></div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer id="footer">
+    <span id="footer-totals"></span>
+    <span id="footer-mode"></span>
+    <span id="footer-updated"></span>
+    <span id="footer-hint">drag &middot; orbit &nbsp; wheel &middot; zoom &nbsp; shift+drag &middot; pan &nbsp; click sphere &middot; inspect</span>
+  </footer>
+</div>
+
+<!-- LEGEND -->
+<div id="legend">
+  <span class="leg green">&#9679; &le;<span id="leg-amber">60</span>%</span>
+  <span class="leg amber">&#9679; 60&ndash;<span id="leg-red">90</span>%</span>
+  <span class="leg red">&#9679; &gt;<span id="leg-red2">90</span>% &#x2605;</span>
+  <span class="leg unknown">&#9679; no data</span>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
