@@ -102,3 +102,7 @@ python -m pytest -q
 ## Roadmap
 
 - Real Kuma / Prometheus collector for the mesh-traffic view (currently demo only).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
